@@ -130,7 +130,6 @@ use POSIX qw(floor);
 
 sub getProfile {
     my ($self) = @_;
-    # https://www.pandora.com/api/v1/listener/getProfile
     my $response = $self->execute(
         method => 'v1/listener/getProfile',
         data => {
@@ -144,8 +143,6 @@ sub getProfile {
 
 sub getFeedback {
     my ($self, %args) = @_;
-    # "text": "{\"pageSize\":10,\"startIndex\":0,\"webname\":\"pandora.com44\"}"
-    # "text": "{\"pageSize\":10,\"startIndex\":10,\"webname\":\"pandora.com44\"}"
     my $pageSize = 100;
     my $pages = floor(($self->positiveFeedbackCount + $pageSize - 1) / $pageSize);
     my $feedback = [];

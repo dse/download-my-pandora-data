@@ -26,3 +26,4 @@ my $d = My::Pandora::Data->new(
 $d->debug(1);
 $d->dataDir($dataDir) if defined $dataDir;
 $d->downloadData();
+$d->downloadRESTData();

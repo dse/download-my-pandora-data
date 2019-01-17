@@ -10,67 +10,19 @@ use File::Basename qw(dirname basename);
 use File::Path qw(make_path);
 use File::Remove qw(remove);
 use URI::Escape qw(uri_escape_utf8);
+use FindBin;
 
-my $fh;
-open($fh, '<', "$ENV{HOME}/.pandora/credentials.txt") or die;
-my $username = <$fh>;
-my $password = <$fh>;
-$username =~ s{\R\z}{};
-$password =~ s{\R\z}{};
-$password = decode_base64($password);
-close($fh);
+use lib "$FindBin::Bin/../lib";
+use My::Pandora::Data;
 
-my $json = JSON->new();
-$json->pretty(1);
-
-my $p = WebService::Pandora->new(username => $username, password => $password);
-$p->login() or die;
-
-remove(\1, { glob => 0 }, "$ENV{HOME}/.pandora/data/stations");
-
-my $stationList = $p->getStationList();
-die( $p->error() ) if ( !$stationList );
-write_file("$ENV{HOME}/.pandora/data/stations.json", $stationList);
-
-my $bookmarks = $p->getBookmarks();
-die( $p->error() ) if ( !$bookmarks );
-write_file("$ENV{HOME}/.pandora/data/bookmarks.json", $bookmarks);
-
-my $genreStations = $p->getGenreStations();
-die( $p->error() ) if ( !$genreStations );
-write_file("$ENV{HOME}/.pandora/data/genreStations.json", $genreStations);
-
-my $unsafe = '^' . join('', map { quotemeta($_) }
-                            grep { index('/\\"*:<>?|', $_) == -1 }
-                            map { chr($_) }
-                            (32 .. 126));
-
-foreach my $station (@{$stationList->{stations}}) {
-    my $token = $station->{stationToken};
-    my $name = $station->{stationName};
-    my $nameEscaped = uri_escape_utf8($name, $unsafe);
-    my $stationData = $p->getStation(
-        stationToken => $token,
-        includeExtendedAttributes => 1,
-    );
-    die( $p->error() ) if ( !$stationData );
-    write_file("$ENV{HOME}/.pandora/data/stations/$nameEscaped.json",
-               $stationData);
+my $dataDir;
+if (scalar @ARGV) {
+    $dataDir = $ARGV[0];
 }
 
-sub write_file {
-    my ($filename, $data) = @_;
-    if (-e $filename && -M $filename < 60 / 86400) {
-        warn("$filename exists and is recent.\n");
-        return;
-    }
-    my $tempFilename = $filename . '.tmp';
-    warn("Writing $filename\n");
-    make_path(dirname($tempFilename));
-    my $fh;
-    open($fh, '>', $tempFilename)    or die("open $tempFilename: $!\n");
-    binmode($fh, ':utf8')            or die("binmode $tempFilename: $!\n");
-    print $fh $json->encode($data)   or die("print $tempFilename: $!\n");
-    close($fh)                       or die("close $tempFilename: $!\n");
-    rename($tempFilename, $filename) or die("rename $tempFilename: $!\n");
-}
+my $d = My::Pandora::Data->new(
+    format => 'text',
+);
+$d->debug(1);
+$d->dataDir($dataDir) if defined $dataDir;
+$d->downloadData();

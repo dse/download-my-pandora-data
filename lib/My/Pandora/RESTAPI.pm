@@ -19,9 +19,6 @@ has 'ua' => (
         my $ua = LWP::UserAgent->new();
         $ua->cookie_jar($self->cookieJar);
         $ua->agent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_2) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36');
-        # $ua->default_header('Accept-Encoding' => scalar HTTP::Message::decodable());
-        # $ua->add_handler("request_send",  sub { print shift->as_string; return });
-        # $ua->add_handler("response_done", sub { print shift->as_string; return });
         return $ua;
     },
 );
@@ -40,7 +37,6 @@ has 'json' => (
     is => 'rw', lazy => 1, default => sub {
         my ($self) = @_;
         my $json = JSON->new();
-        # $json->pretty(1);
         return $json;
     },
 );
@@ -60,7 +56,6 @@ has 'positiveFeedbackCount' => (is => 'rw');
 has 'loginResponse' => (is => 'rw');
 has 'profile' => (is => 'rw');
 
-# @param $method: 'v1/station/getFeedback'
 sub createRequest {
     my ($self, %args) = @_;
     my $method      = $args{method};

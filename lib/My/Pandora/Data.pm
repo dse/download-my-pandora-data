@@ -15,9 +15,6 @@ use Data::Dumper qw(Dumper);
 use File::Spec::Functions qw(rel2abs);
 use FindBin;
 
-use lib "$FindBin::Bin/../../../lib";
-use My::Pandora::WebService::Pandora;
-
 use Moo;
 
 has 'dataDir' => (is => 'rw', default => "$ENV{HOME}/.pandora/data");
@@ -41,7 +38,7 @@ sub downloadData {
     my ($username, $password) = $self->getCredentials();
 
     $self->webService(
-        My::Pandora::WebService::Pandora->new(
+        WebService::Pandora->new(
             username => $username,
             password => $password,
         )
@@ -64,10 +61,6 @@ sub downloadData {
     my $bookmarks = $self->webService->getBookmarks();
     die( $self->webService->error() ) if ( !$bookmarks );
     $self->writeFile("$ENV{HOME}/.pandora/data/bookmarks.json", $bookmarks);
-
-    my $thumbsUp = $self->webService->getThumbsUp();
-    die( $self->webService->error() ) if ( !$thumbsUp );
-    $self->writeFile("$ENV{HOME}/.pandora/data/thumbsup.json", $thumbsUp);
 
     my $genreStations = $self->webService->getGenreStations();
     die( $self->webService->error() ) if ( !$genreStations );

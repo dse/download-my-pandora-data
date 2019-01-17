@@ -17,7 +17,7 @@ data that I could find, so I created one.
 ## How to Use
 
 1.  `mkdir ~/.pandora`
-2.  `echo 'youremail@example.com` > ~/.pandora/credentials.txt`
+2.  `echo 'youremail@example.com' > ~/.pandora/credentials.txt`
 3.  `echo -n 'yourpassword' | perl -MMIME::Base64 -e 'print encode_base64(<>);' >> ~/.pandora/credentials.txt`
 4.  `bin/download-my-pandora-data`
 

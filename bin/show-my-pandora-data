@@ -14,22 +14,13 @@ use FindBin;
 use lib "$FindBin::Bin/../lib";
 use My::Pandora::Data;
 
-my $json = JSON->new();
-$json->pretty(1);
-
-my $unsafe = '^' . join('', map { quotemeta($_) }
-                            grep { index('/\\"*:<>?|', $_) == -1 }
-                            map { chr($_) }
-                            (32 .. 126));
-
-my $dataDir = "$ENV{HOME}/.pandora/data";
-
+my $dataDir;
 if (scalar @ARGV) {
     $dataDir = $ARGV[0];
 }
 
 my $d = My::Pandora::Data->new(
-    dataDir => $dataDir,
     format => 'text',
 );
+$d->dataDir($dataDir) if defined $dataDir;
 $d->listData();

@@ -31,6 +31,8 @@ has 'stationNameHash' => (is => 'rw', default => sub { return {}; });
 has 'webService' => (is => 'rw');
 has 'debug' => (is => 'rw');
 has 'restAPI' => (is => 'rw');
+has 'force' => (is => 'rw');
+has 'cacheLifetimeSeconds' => (is => 'rw', default => 3600);
 
 use constant UNSAFE => '^' . join('', map { quotemeta($_) }
                                       grep { index('/\\"*:<>?|', $_) == -1 }
@@ -63,27 +65,14 @@ sub downloadProfile {
 sub downloadFeedback {
     my ($self) = @_;
 
-    my @filesToRemove = map {
-        $_->{filename}
-    } grep {
-        !(defined $_->{page} &&
-              $_->{page} =~ m{\A\d+\z} &&
-              $_->{page} >= 0 &&
-              $_->{page} < $self->restAPI->positiveFeedbackCount)
-    } map {
-        $_ =~ m{/([^\/]+)\.json\z};
-        my $page = $1;
-        { page => $page, filename => $_ }
-    } glob("feedback/*.json");
-
-    foreach my $file (@filesToRemove) {
-        unlink($file) or warn("cannot remove $file: $!\n");
-    }
+    my $lastPage = $self->restAPI->positiveFeedbackCount - 1;
+    my @files = map { "$_.json" } (0 .. $lastPage);
+    $self->removeFilesExcept('feedback', '*.json', @files);
 
     $self->restAPI->getFeedback(
         callback => sub {
-            my ($page, $response) = @_;
-            $self->writeFile("feedback/$page.json", $response);
+            my ($page, $sub) = @_;
+            $self->writeFile("feedback/$page.json", $sub);
         }
     );
 }
@@ -102,29 +91,44 @@ sub downloadData {
 
     remove(\1, { glob => 0 }, "stations");
 
-    my $stationList = $self->webService->getStationList();
-    die( $self->webService->error() ) if ( !$stationList );
-    $self->writeFile("stations.json", $stationList);
+    my $stationList = $self->writeFile("stations.json", sub {
+                                           my $stationList = $self->webService->getStationList();
+                                           die( $self->webService->error() ) if ( !$stationList );
+                                           return $stationList;
+                                       });
 
-    my $bookmarks = $self->webService->getBookmarks();
-    die( $self->webService->error() ) if ( !$bookmarks );
-    $self->writeFile("bookmarks.json", $bookmarks);
+    my $bookmarks = $self->writeFile("bookmarks.json", sub {
+                                         my $bookmarks = $self->webService->getBookmarks();
+                                         die( $self->webService->error() ) if ( !$bookmarks );
+                                         return $bookmarks;
+                                     });
 
-    my $genreStations = $self->webService->getGenreStations();
-    die( $self->webService->error() ) if ( !$genreStations );
-    $self->writeFile("genreStations.json", $genreStations);
+    my $genreStations = $self->writeFile("genreStations.json", sub {
+                                             my $genreStations = $self->webService->getGenreStations();
+                                             die( $self->webService->error() ) if ( !$genreStations );
+                                             return $genreStations;
+                                         });
+
+    my @stationFiles;
+    foreach my $station (@{$stationList->{stations}}) {
+        my $name = $station->{stationName};
+        my $nameEscaped = uri_escape_utf8($name, UNSAFE);
+        push(@stationFiles, "$nameEscaped.json");
+    }
+    $self->removeFilesExcept('stations', '*.json', @stationFiles);
 
     foreach my $station (@{$stationList->{stations}}) {
         my $token = $station->{stationToken};
         my $name = $station->{stationName};
         my $nameEscaped = uri_escape_utf8($name, UNSAFE);
-        my $stationData = $self->webService->getStation(
-            stationToken => $token,
-            includeExtendedAttributes => 1,
-        );
-        die( $self->webService->error() ) if ( !$stationData );
-        $self->writeFile("stations/$nameEscaped.json",
-                         $stationData);
+        $self->writeFile("stations/$nameEscaped.json", sub {
+                             my $stationData = $self->webService->getStation(
+                                 stationToken => $token,
+                                 includeExtendedAttributes => 1,
+                             );
+                             die( $self->webService->error() ) if ( !$stationData );
+                             return $stationData;
+                         });
     }
 }
 
@@ -598,12 +602,25 @@ sub readFile {
     return $result;
 }
 
+sub fileIsCached {
+    my ($self, $filename, $data) = @_;
+    $filename = rel2abs($filename, $self->dataDir);
+    return 0 if $self->force;
+    if (-e $filename && -M $filename < $self->cacheLifetimeSeconds / 86400) {
+        return 1;
+    }
+    return 0;
+}
+
 sub writeFile {
     my ($self, $filename, $data) = @_;
     $filename = rel2abs($filename, $self->dataDir);
-    if (-e $filename && -M $filename < 60 / 86400) {
+    if ($self->fileIsCached($filename)) {
         warn("$filename exists and is recent.\n");
-        return;
+        return $self->readFile($filename);
+    }
+    if ($data && ref $data eq 'CODE') {
+        $data = $data->();
     }
     my $tempFilename = $filename . '.tmp';
     warn("Writing $filename\n");
@@ -623,6 +640,17 @@ sub indent {
     $text =~ s{\R}{\n}gx;
     $text =~ s{^}{$spaces}gemx;
     return $text;
+}
+
+sub removeFilesExcept {
+    my ($self, $dir, $glob, @files) = @_;
+    $dir = rel2abs($dir, $self->dataDir);
+    @files = map { rel2abs($_, $dir) } @files;
+    my %files = map { ($_, 1) } @files;
+    my @filesToRemove = grep { !$files{$_} } glob($dir . '/' . $glob);
+    foreach my $file (@filesToRemove) {
+        unlink($file) or warn("unlink $file: $!\n");
+    }
 }
 
 1;

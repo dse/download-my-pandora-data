@@ -14,8 +14,6 @@ use FindBin;
 use lib "$FindBin::Bin/../lib";
 use My::Pandora::Data;
 
-my $format = 'custom';
-
 my $json = JSON->new();
 $json->pretty(1);
 

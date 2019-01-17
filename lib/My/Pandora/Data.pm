@@ -15,6 +15,9 @@ use Data::Dumper qw(Dumper);
 use File::Spec::Functions qw(rel2abs);
 use FindBin;
 
+use lib "$FindBin::Bin/../../../lib";
+use My::Pandora::RESTAPI;
+
 use Moo;
 
 has 'dataDir' => (is => 'rw', default => "$ENV{HOME}/.pandora/data");
@@ -27,11 +30,63 @@ has 'json'    => (is => 'rw', lazy => 1, default => sub {
 has 'stationNameHash' => (is => 'rw', default => sub { return {}; });
 has 'webService' => (is => 'rw');
 has 'debug' => (is => 'rw');
+has 'restAPI' => (is => 'rw');
 
 use constant UNSAFE => '^' . join('', map { quotemeta($_) }
                                       grep { index('/\\"*:<>?|', $_) == -1 }
                                       map { chr($_) }
                                       (32 .. 126));
+
+sub downloadRESTData {
+    my ($self) = @_;
+    my ($username, $password) = $self->getCredentials();
+
+    $self->restAPI(My::Pandora::RESTAPI->new(
+        username => $username,
+        password => $password,
+    ));
+    $self->restAPI->getCSRFToken();
+    my $login = $self->restAPI->login();
+    $self->writeFile("login.json", $login);
+
+    $self->downloadProfile();
+    $self->downloadFeedback();
+}
+
+sub downloadProfile {
+    my ($self) = @_;
+
+    my $profile = $self->restAPI->getProfile();
+    $self->writeFile("profile.json", $profile);
+}
+
+sub downloadFeedback {
+    my ($self) = @_;
+
+    my @filesToRemove = map {
+        $_->{filename}
+    } grep {
+        !(defined $_->{page} &&
+              $_->{page} =~ m{\A\d+\z} &&
+              $_->{page} >= 0 &&
+              $_->{page} < $self->restAPI->positiveFeedbackCount)
+    } map {
+        $_ =~ m{/([^\/]+)\.json\z};
+        my $page = $1;
+        { page => $page, filename => $_ }
+    } glob("feedback/*.json");
+
+    foreach my $file (@filesToRemove) {
+        unlink($file) or warn("cannot remove $file: $!\n");
+    }
+
+    $self->restAPI->getFeedback(
+        callback => sub {
+            my ($page, $response) = @_;
+            $self->writeFile("feedback/$page.json", $response);
+        }
+    );
+}
 
 sub downloadData {
     my ($self) = @_;
@@ -45,26 +100,19 @@ sub downloadData {
     );
     $self->webService->login() or die;
 
-    if (defined $self->webService->{ua}) {
-        my $ua = $self->webService->{ua};
-        $ua->default_header('Accept-Encoding' => scalar HTTP::Message::decodable());
-        $ua->add_handler("request_send",  sub { shift->dump; return });
-        $ua->add_handler("response_done", sub { shift->dump; return });
-    }
-
-    remove(\1, { glob => 0 }, "$ENV{HOME}/.pandora/data/stations");
+    remove(\1, { glob => 0 }, "stations");
 
     my $stationList = $self->webService->getStationList();
     die( $self->webService->error() ) if ( !$stationList );
-    $self->writeFile("$ENV{HOME}/.pandora/data/stations.json", $stationList);
+    $self->writeFile("stations.json", $stationList);
 
     my $bookmarks = $self->webService->getBookmarks();
     die( $self->webService->error() ) if ( !$bookmarks );
-    $self->writeFile("$ENV{HOME}/.pandora/data/bookmarks.json", $bookmarks);
+    $self->writeFile("bookmarks.json", $bookmarks);
 
     my $genreStations = $self->webService->getGenreStations();
     die( $self->webService->error() ) if ( !$genreStations );
-    $self->writeFile("$ENV{HOME}/.pandora/data/genreStations.json", $genreStations);
+    $self->writeFile("genreStations.json", $genreStations);
 
     foreach my $station (@{$stationList->{stations}}) {
         my $token = $station->{stationToken};
@@ -75,7 +123,7 @@ sub downloadData {
             includeExtendedAttributes => 1,
         );
         die( $self->webService->error() ) if ( !$stationData );
-        $self->writeFile("$ENV{HOME}/.pandora/data/stations/$nameEscaped.json",
+        $self->writeFile("stations/$nameEscaped.json",
                          $stationData);
     }
 }

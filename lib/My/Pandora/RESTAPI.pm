@@ -143,16 +143,21 @@ sub getProfile {
 
 sub getFeedback {
     my ($self, %args) = @_;
-    my $pageSize = 100;
+    my $pageSize = $args{pageSize} // 100;
     my $pages = floor(($self->positiveFeedbackCount + $pageSize - 1) / $pageSize);
     my $feedback = [];
     my $misc = [];
     my $callback = $args{callback};
-    for (my $i = 0; $i < $pages; $i += 1) {
-        if ($i) {
+    my $callback2 = $args{callback2};
+    my $wait = 0;
+    my $i;
+
+    my $sub = sub {
+        if ($wait) {
             print STDERR ("Waiting...\n");
             sleep(2);
         }
+        $wait = 1;
         printf STDERR ("Retrieving page %d of %d of all account feedback...\n", $i + 1, $pages);
         my $response = $self->execute(
             method => 'v1/station/getFeedback',
@@ -162,13 +167,22 @@ sub getFeedback {
                 webname    => $self->webname,
             }
         );
+        return $response;
+    };
+
+    for ($i = 0; $i < $pages; $i += 1) {
         if ($callback && ref $callback eq 'CODE') {
-            $callback->($i, $response);
+            $callback->($i, $sub);
+        } else {
+            my $response = $sub->();
+            delete $response->{total};
+            my $batch = delete $response->{feedback};
+            push(@$feedback, @$batch);
+            push(@$misc, $response);
         }
-        delete $response->{total};
-        my $batch = delete $response->{feedback};
-        push(@$feedback, @$batch);
-        push(@$misc, $response);
+    }
+    if ($callback) {
+        return;
     }
     return {
         misc => $misc,
